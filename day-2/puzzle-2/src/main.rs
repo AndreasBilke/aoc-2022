@@ -3,11 +3,15 @@ use std::fs;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let input = &args[1];
+    if args.len() != 2 {
+        panic!("Not enough command line arguments");
+    }
 
+    let input = &args[1];
     let lines = fs::read_to_string(input)
         .expect("Could not read file");
     let lines: Vec<&str> = lines.trim().split('\n').collect();
+
     let plays = create_plays(lines);
     let mut play_sum = 0;
     for play in plays {
@@ -89,18 +93,8 @@ fn create_plays(plays_string: Vec<&str>) -> Vec<Play> {
     let mut plays: Vec<Play> = Vec::new();
 
     for play in plays_string {
-        let mut play = play.split(" ");
-        let play_opponent = match play.next() {
-            Some(x) => x,
-            None => panic!("Unexpected input")
-        };
-        let play_me = match play.next() {
-            Some(x) => x,
-            None => panic!("Unexpected input")
-        };
-
-        let play = Play::new(play_opponent, play_me);
-        plays.push(play);
+        let play: Vec<&str> = play.split(" ").collect();
+        plays.push(Play::new(play[0], play[1]));
     }
 
     return plays;
