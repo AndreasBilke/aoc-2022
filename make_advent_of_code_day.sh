@@ -18,8 +18,11 @@ use std::fs;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    if args.len() != 2 {
+        panic!("Not enough command line arguments");
+    }
+    
     let input = &args[1];
-
     let lines = fs::read_to_string(input)
         .expect("Could not read file");
     let lines: Vec<&str> = lines.trim().split('\n').collect();
