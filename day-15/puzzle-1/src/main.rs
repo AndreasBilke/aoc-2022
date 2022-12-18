@@ -1,10 +1,6 @@
 use regex::Regex;
-use std::collections::HashSet;
 use std::env;
 use std::fs;
-
-// für die Lösung reicht es aus in einem großen Suchradius (-40k < x < +40k) für jeden Punkt
-// für jeden Sensor zu schauen ob er erreichbar wäre
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -17,10 +13,9 @@ fn main() {
         .expect("Could not read file");
     let lines: Vec<&str> = lines.trim().split('\n').collect();
     let (sensors, beacons) = read_sensors(&lines);
-    let mut map = Map::new(sensors, beacons);
-    map.build_beacon_map();
+    let map = Map::new(sensors, beacons);
+    let no_beacon_count = map.count_no_beacons(2000000);
 
-    let no_beacon_count = map.get_no_beacons_in_row(2000000);
     println!("In y=2000000 there are {} beacon free zones", no_beacon_count);
 }
 
@@ -40,96 +35,89 @@ fn read_sensors(lines: &Vec<&str>) -> (Vec<Sensor>, Vec<Beacon>) {
         let distance = (sensor_x - beacon_x).abs() + (sensor_y - beacon_y).abs();
 
         sensors.push(Sensor { position: (sensor_x, sensor_y), distance});
-        beacons.push(Beacon { position: (beacon_x, beacon_y)});
+        let beacon = Beacon { position: (beacon_x, beacon_y)};
+        if !beacons.contains(&beacon) {
+            beacons.push(beacon);
+        }
     }
 
     (sensors, beacons)
 }
 
+#[derive(PartialEq)]
 struct Beacon {
     position: (i32, i32)
 }
 
+#[derive(Debug)]
 struct Sensor {
     position: (i32, i32),
     distance: i32
 }
 
+impl Sensor {
+    fn reachable(&self, other: (i32, i32)) -> bool {
+        let dist = (self.position.0 - other.0).abs() + (self.position.1 - other.1).abs();
+
+        dist <= self.distance
+    }
+}
+
 struct Map {
     sensors: Vec<Sensor>,
     beacons: Vec<Beacon>,
-    no_beacons: HashSet<(i32, i32)>
+    x_search_range: (i32, i32)
 }
 
 impl Map {
     fn new(sensors: Vec<Sensor>, beacons: Vec<Beacon>) -> Self {
-        Map { sensors, beacons, no_beacons: HashSet::new() }
+        let min = sensors.iter().map(|s| {
+           s.position.0 - s.distance
+        }).min().expect("No min x found");
+
+        let max = sensors.iter().map(|s| {
+            s.position.0 + s.distance
+        }).max().expect("No max x found");
+
+        Map { sensors, beacons, x_search_range: (min, max) }
     }
 
-    fn build_beacon_map(&mut self) {
-        // compute from sensor with distance all points
-        for sensor in &self.sensors {
-            for y in 0..=sensor.distance {
-                for x in sensor.position.0 - sensor.distance + y..=sensor.position.0 + sensor.distance - y {
-                    let no_beacon_pos1 = (x, sensor.position.1 + y);
-                    let no_beacon_pos2 = (x, sensor.position.1 - y); // mirrored on y axis
+    fn count_no_beacons(&self, row: i32) -> i32 {
+        let mut no_beacons = 0;
 
-                    let dist1 = (sensor.position.0 - no_beacon_pos1.0).abs() + (sensor.position.1 - no_beacon_pos1.1).abs();
-                    let dist2 = (sensor.position.0 - no_beacon_pos2.0).abs() + (sensor.position.1 - no_beacon_pos2.1).abs();
+        for x in self.x_search_range.0..=self.x_search_range.1 {
+            let p = (x, row);
+            let mut reachable = false;
 
-                    assert!(dist1 <= sensor.distance);
-                    assert!(dist2 <= sensor.distance);
+            for s in &self.sensors {
+                if s.reachable(p) {
+                    reachable = true;
 
-                    self.no_beacons.insert(no_beacon_pos1);
-                    self.no_beacons.insert(no_beacon_pos2);
+                    break;
                 }
+            }
+
+            if reachable {
+                no_beacons += 1;
             }
         }
 
-        for sensor in &self.sensors {
-            self.no_beacons.remove(&sensor.position);
-        }
-
-        for beacon in &self.beacons {
-            self.no_beacons.remove(&beacon.position);
-        }
-    }
-
-    fn get_no_beacons_in_row(&self, row: i32) -> usize {
-        self.no_beacons.iter().map(|pos|
-            return if pos.1 == row {
+        let num_sensor_row: i32 = self.sensors.iter().map(|s| {
+            return if s.position.1 == row {
                 1
             } else {
                 0
             }
-        ).sum()
-    }
+        }).sum();
 
-    fn draw(&self) {
-        let min_x = self.no_beacons.iter().map(|pos| pos.0 ).min().expect("No min found");
-        let max_x = self.no_beacons.iter().map(|pos| pos.0 ).max().expect("No max found");
-
-        let min_y = self.no_beacons.iter().map(|pos| pos.1 ).min().expect("No min found");
-        let max_y = self.no_beacons.iter().map(|pos| pos.1 ).max().expect("No max found");
-
-        let sensor_pos: Vec<(i32, i32)> = self.sensors.iter().map(|s| s.position).collect();
-        let beacon_pos: Vec<(i32, i32)> = self.beacons.iter().map(|b| b.position).collect();
-
-        for y in min_y..=max_y {
-            for x in min_x..=max_x {
-                let mut symbol = '.';
-
-                if self.no_beacons.contains(&(x, y)) {
-                    symbol = '#';
-                } else if sensor_pos.contains(&(x, y)) {
-                    symbol = 'S';
-                } else if beacon_pos.contains(&(x, y)) {
-                    symbol = 'B';
-                }
-
-                print!("{}", symbol);
+        let num_beacons_row: i32 = self.beacons.iter().map(|b| {
+            return if b.position.1 == row {
+                1
+            } else {
+                0
             }
-            println!();
-        }
+        }).sum();
+
+        no_beacons - num_sensor_row - num_beacons_row
     }
 }
